@@ -1,0 +1,24 @@
+cabal-version:      3.0
+name:               quad
+version:            0
+build-type:         Simple
+
+common bed
+    ghc-options: -Wall
+    default-language: Haskell2010
+    build-depends:    base ^>=4.17.2.1
+
+library
+    import:           bed
+    hs-source-dirs:   src
+    exposed-modules:  Bootstrap
+    -- other-modules:
+    build-depends:    text
+                    , aeson
+                    , twain
+
+executable quad
+    import:           bed
+    hs-source-dirs:   app
+    main-is:          Main.hs
+    build-depends:    quad
