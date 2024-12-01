@@ -10,9 +10,8 @@ import Data.Coerce (coerce)
 import Network.HTTP.Conduit (Request)
 import qualified Socket
 
-import Control.Exception (Exception, throwIO)
-import Data.Aeson ((.:))
-import Data.Aeson.Types (Parser, parseEither)
+import Control.Exception (Exception)
+import Data.Aeson (FromJSON, Value (Object), (.:))
 import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import qualified Data.Text as T
@@ -48,10 +47,9 @@ newtype CreateContainerError
     = CreateContainerParseResponseFailed Text
     deriving (Show)
 
--- instance FromJSON ContainerId where
---     parseJSON = \v -> do
---         cId <- parseJSON v
---         pure $ ContainerId cId
+instance FromJSON ContainerId where
+    parseJSON (Object obj) = ContainerId <$> (obj .: "Id")
+    parseJSON _ = fail "not an object"
 
 {-
 
@@ -102,14 +100,9 @@ createContainerExn options = do
                 . HTTP.setRequestBodyJSON body
                 $ HTTP.defaultRequest
 
-    let container :: Aeson.Object -> Parser ContainerId
-        container obj = ContainerId <$> (obj .: "Id")
-
     let
         parseResponse :: ByteString -> Either String ContainerId
-        parseResponse resp =
-            Aeson.eitherDecodeStrict resp >>= \obj ->
-                parseEither container obj
+        parseResponse = Aeson.eitherDecodeStrict'
 
     res <- HTTP.httpBS req
     return $
