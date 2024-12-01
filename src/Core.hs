@@ -11,6 +11,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text.IO as TIO
+import qualified Docker
 
 newtype StepName = StepName Text
     deriving
@@ -22,16 +23,10 @@ newtype StepName = StepName Text
 stepNameToText :: StepName -> Text
 stepNameToText (StepName step) = step
 
-newtype Image = Image Text
-    deriving (Show, Eq)
-
-imageToText :: Image -> Text
-imageToText (Image image_) = image_
-
 data Step = Step
     { stepName :: StepName
     , stepCommands :: NonEmpty Text
-    , stepImage :: Image
+    , stepImage :: Docker.Image
     }
     deriving (Show, Eq)
 
@@ -58,19 +53,13 @@ data BuildState
     | BuildFinished BuildResult
     deriving (Show, Eq)
 
-newtype ContainerExitCode = ContainerExitCode Int
-    deriving (Show, Eq)
-
-exitCodeToInt :: ContainerExitCode -> Int
-exitCodeToInt (ContainerExitCode exitCode) = exitCode
-
 data StepResult
-    = StepFailed ContainerExitCode
+    = StepFailed Docker.ContainerExitCode
     | StepSucceeded
     deriving (Show, Eq)
 
-extCodeToStepResult :: ContainerExitCode -> StepResult
-extCodeToStepResult exitCode = case exitCodeToInt exitCode of
+extCodeToStepResult :: Docker.ContainerExitCode -> StepResult
+extCodeToStepResult exitCode = case Docker.exitCodeToInt exitCode of
     0 -> StepSucceeded
     _ -> StepFailed exitCode
 
@@ -127,7 +116,7 @@ progress build = case buildState build of
                         }
     BuildRunning state -> do
         TIO.putStrLn "Waiting for container to stop..."
-        let result = extCodeToStepResult $ ContainerExitCode 0
+        let result = extCodeToStepResult $ Docker.ContainerExitCode 0
         TIO.putStrLn "... container stopped! Exit code was: 0. Transitioning to `BuildFinished` state"
         pure
             build

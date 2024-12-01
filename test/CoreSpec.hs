@@ -8,6 +8,7 @@ import Core
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty as NE
 import Data.Text (Text)
+import qualified Docker
 import Test.Hspec (Spec, describe, it, shouldBe)
 
 spec :: Spec
@@ -22,7 +23,7 @@ makeStep name image commands =
     Step
         { stepName = StepName name
         , stepCommands = commands
-        , stepImage = Image image
+        , stepImage = Docker.Image image
         }
 
 makePipeline :: NonEmpty Step -> Pipeline

@@ -1,0 +1,3 @@
+:set prompt "%s> "
+:set prompt-cont "%s| "
+:set -XOverLoadedStrings

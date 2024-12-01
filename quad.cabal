@@ -13,9 +13,17 @@ library
     hs-source-dirs:   src
     exposed-modules:  Bootstrap
                     , Core
-    -- other-modules:    Core
+                    , Docker
+    other-modules:    Socket
     build-depends:    text
+                    , bytestring
                     , containers
+                    , network
+                    , http-client
+                    
+                    -- provides Network.HTTP.Simple
+                    , http-conduit
+                    
                     , aeson
                     , twain
 
