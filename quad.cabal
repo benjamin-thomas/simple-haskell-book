@@ -12,8 +12,10 @@ library
     import:           bed
     hs-source-dirs:   src
     exposed-modules:  Bootstrap
-    -- other-modules:
+                    , Core
+    -- other-modules:    Core
     build-depends:    text
+                    , containers
                     , aeson
                     , twain
 
@@ -22,3 +24,16 @@ executable quad
     hs-source-dirs:   app
     main-is:          Main.hs
     build-depends:    quad
+
+test-suite quad-test
+    import:           bed
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    other-modules:    CoreSpec
+    build-tool-depends:
+      hspec-discover:hspec-discover
+    build-depends:    quad
+                    , hspec
+                    , hspec-discover
+                    , text
