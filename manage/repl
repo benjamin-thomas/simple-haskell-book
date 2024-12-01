@@ -1,0 +1,3 @@
+#!/bin/bash -x
+
+exec cabal repl --repl-options "-interactive-print=Text.Pretty.Simple.pPrint" --build-depends pretty-simple

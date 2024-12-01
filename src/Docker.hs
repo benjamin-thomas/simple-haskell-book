@@ -6,9 +6,16 @@ import Data.Text (Text)
 import qualified Network.HTTP.Simple as HTTP
 
 import qualified Data.Aeson as Aeson
-import Debug.Trace (traceIO)
-import Network.HTTP.Conduit
+import Data.Coerce (coerce)
+import Network.HTTP.Conduit (Request)
 import qualified Socket
+
+import Control.Exception (Exception, throwIO)
+import Data.Aeson ((.:))
+import Data.Aeson.Types (Parser, parseEither)
+import Data.Bifunctor (first)
+import Data.ByteString (ByteString)
+import qualified Data.Text as T
 
 newtype Image = Image Text
     deriving (Show, Eq)
@@ -25,6 +32,26 @@ newtype ContainerExitCode = ContainerExitCode Int
 
 exitCodeToInt :: ContainerExitCode -> Int
 exitCodeToInt (ContainerExitCode exitCode) = exitCode
+
+newtype ContainerId = ContainerId Text
+    deriving (Show, Eq)
+
+containerIdToText :: ContainerId -> Text
+containerIdToText = coerce
+
+newtype DockerParseException = DockerParseException Text
+    deriving (Show)
+
+instance Exception DockerParseException
+
+newtype CreateContainerError
+    = CreateContainerParseResponseFailed Text
+    deriving (Show)
+
+-- instance FromJSON ContainerId where
+--     parseJSON = \v -> do
+--         cId <- parseJSON v
+--         pure $ ContainerId cId
 
 {-
 
@@ -45,8 +72,8 @@ cabal repl --repl-options "-interactive-print=Text.Pretty.Simple.pPrint" --build
 res <- createContainer $ CreateContainerOptions $ Image "hello-world"
 responseBody res
  -}
--- createContainer :: CreateContainerOptions -> IO ()
-createContainer options = do
+createContainerExn :: CreateContainerOptions -> IO (Either CreateContainerError ContainerId)
+createContainerExn options = do
     manager <- Socket.newManager "/var/run/docker.sock"
 
     let body :: Aeson.Value
@@ -75,6 +102,17 @@ createContainer options = do
                 . HTTP.setRequestBodyJSON body
                 $ HTTP.defaultRequest
 
+    let container :: Aeson.Object -> Parser ContainerId
+        container obj = ContainerId <$> (obj .: "Id")
+
+    let
+        parseResponse :: ByteString -> Either String ContainerId
+        parseResponse resp =
+            Aeson.eitherDecodeStrict resp >>= \obj ->
+                parseEither container obj
+
     res <- HTTP.httpBS req
-    traceIO (show res)
-    return res
+    return $
+        first -- first is map error
+            (CreateContainerParseResponseFailed . T.pack)
+            (parseResponse (HTTP.getResponseBody res))
