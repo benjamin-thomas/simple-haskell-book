@@ -11,10 +11,14 @@ import Network.HTTP.Conduit (Request)
 import qualified Socket
 
 import Control.Exception (Exception)
+import Control.Monad (void)
 import Data.Aeson (FromJSON, Value (Object), (.:))
 import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.Text as T
+import Data.Text.Encoding (encodeUtf8)
+import Network.HTTP.Client (Manager)
 
 newtype Image = Image Text
     deriving (Show, Eq)
@@ -51,6 +55,32 @@ instance FromJSON ContainerId where
     parseJSON (Object obj) = ContainerId <$> (obj .: "Id")
     parseJSON _ = fail "not an object"
 
+initManager :: IO Manager
+initManager = Socket.newManager "/var/run/docker.sock"
+
+apiVersion :: ByteString
+apiVersion = "/v1.47"
+
+{- | Combine two paths, ensuring no double slashes can occur.
+
+>>> "a" </> "b"
+"a/b"
+
+>>> "a/" </> "b"
+"a/b"
+
+>>> "a" </> "/b"
+"a/b"
+
+>>> "a/" </> "/b"
+"a/b"
+-}
+(</>) :: ByteString -> ByteString -> ByteString
+(</>) a b
+    | BS.isSuffixOf "/" a && BS.isPrefixOf "/" b = a <> BS.drop 1 b
+    | BS.isSuffixOf "/" a || BS.isPrefixOf "/" b = a <> b
+    | otherwise = a <> "/" <> b
+
 {-
 
 To verify the latest API version available on the local docker daemon, run:
@@ -70,9 +100,9 @@ cabal repl --repl-options "-interactive-print=Text.Pretty.Simple.pPrint" --build
 res <- createContainer $ CreateContainerOptions $ Image "hello-world"
 responseBody res
  -}
-createContainerExn :: CreateContainerOptions -> IO (Either CreateContainerError ContainerId)
-createContainerExn options = do
-    manager <- Socket.newManager "/var/run/docker.sock"
+createContainer :: CreateContainerOptions -> IO (Either CreateContainerError ContainerId)
+createContainer options = do
+    manager <- initManager
 
     let body :: Aeson.Value
         body =
@@ -95,7 +125,7 @@ createContainerExn options = do
     let req :: Request
         req =
             HTTP.setRequestManager manager
-                . HTTP.setRequestPath "/v1.47/containers/create"
+                . HTTP.setRequestPath (apiVersion </> "/containers/create")
                 . HTTP.setRequestMethod "POST"
                 . HTTP.setRequestBodyJSON body
                 $ HTTP.defaultRequest
@@ -109,3 +139,20 @@ createContainerExn options = do
         first -- first is map error
             (CreateContainerParseResponseFailed . T.pack)
             (parseResponse (HTTP.getResponseBody res))
+
+{-
+
+To test in GHCi:
+
+> Right container <- createContainer $ CreateContainerOptions $ Image "alpine"
+> startContainer container
+-}
+startContainer :: ContainerId -> IO ()
+startContainer (ContainerId containerId) = do
+    manger <- initManager
+    let req =
+            HTTP.setRequestManager manger
+                . HTTP.setRequestPath (apiVersion </> "/containers" </> encodeUtf8 containerId </> "/start")
+                . HTTP.setRequestMethod "POST"
+                $ HTTP.defaultRequest
+    void $ HTTP.httpBS req
