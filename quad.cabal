@@ -22,7 +22,7 @@ library
                     , containers
                     , network
                     , http-client
-                    
+
                     -- provides Network.HTTP.Simple
                     , http-conduit
 
@@ -49,3 +49,4 @@ test-suite quad-test
                     , hspec
                     , hspec-discover
                     , text
+                    , containers

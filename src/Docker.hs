@@ -47,6 +47,13 @@ data Service = Service
     , startContainer :: ContainerId -> IO ()
     }
 
+createService :: Service
+createService =
+    Service
+        { createContainer = createContainer_
+        , startContainer = startContainer_
+        }
+
 newtype DockerParseException = DockerParseException Text
     deriving (Show)
 
