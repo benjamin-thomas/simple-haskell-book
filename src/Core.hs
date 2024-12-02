@@ -4,6 +4,7 @@
 
 module Core (module Core) where
 
+import Control.Exception (throwIO)
 import qualified Data.List as List
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
@@ -107,6 +108,14 @@ progress build = case buildState build of
                 pure $ build{buildState = BuildFinished result}
             Right step -> do
                 TIO.putStrLn "Attempt starting container..."
+                let createOptions = Docker.CreateContainerOptions $ Docker.Image "alpine"
+                container <-
+                    either
+                        -- TODO: decide how to handle errors
+                        (\_ -> throwIO $ userError "Failed to create container")
+                        pure
+                        =<< Docker.createContainer createOptions
+                Docker.startContainer container
                 TIO.putStrLn "... container started! Transitioning to `BuildRunning` state"
                 pure $
                     build
