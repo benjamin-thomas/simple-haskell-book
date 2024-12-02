@@ -42,6 +42,11 @@ newtype ContainerId = ContainerId Text
 containerIdToText :: ContainerId -> Text
 containerIdToText = coerce
 
+data Service = Service
+    { createContainer :: CreateContainerOptions -> IO (Either CreateContainerError ContainerId)
+    , startContainer :: ContainerId -> IO ()
+    }
+
 newtype DockerParseException = DockerParseException Text
     deriving (Show)
 
@@ -97,11 +102,10 @@ cabal repl --repl-options "-interactive-print=Text.Pretty.Simple.pPrint" --build
 > :m +Docker +Network.HTTP.Client
 > :set -XOverloadedStrings
 
-res <- createContainer $ CreateContainerOptions $ Image "hello-world"
-responseBody res
+res <- createContainer_ $ CreateContainerOptions $ Image "hello-world"
  -}
-createContainer :: CreateContainerOptions -> IO (Either CreateContainerError ContainerId)
-createContainer options = do
+createContainer_ :: CreateContainerOptions -> IO (Either CreateContainerError ContainerId)
+createContainer_ options = do
     manager <- initManager
 
     let body :: Aeson.Value
@@ -144,11 +148,11 @@ createContainer options = do
 
 To test in GHCi:
 
-> Right container <- createContainer $ CreateContainerOptions $ Image "alpine"
-> startContainer container
+> Right container <- createContainer_ $ CreateContainerOptions $ Image "alpine"
+> startContainer_ container
 -}
-startContainer :: ContainerId -> IO ()
-startContainer (ContainerId containerId) = do
+startContainer_ :: ContainerId -> IO ()
+startContainer_ (ContainerId containerId) = do
     manger <- initManager
     let req =
             HTTP.setRequestManager manger

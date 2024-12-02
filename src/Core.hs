@@ -99,8 +99,8 @@ buildHasNextStep build =
                 (stepName step)
                 (buildCompletedSteps build)
 
-progress :: Build -> IO Build
-progress build = case buildState build of
+progress :: Docker.Service -> Build -> IO Build
+progress dockerService build = case buildState build of
     BuildReady ->
         case buildHasNextStep build of
             Left result -> do
@@ -114,8 +114,8 @@ progress build = case buildState build of
                         -- TODO: decide how to handle errors
                         (\_ -> throwIO $ userError "Failed to create container")
                         pure
-                        =<< Docker.createContainer createOptions
-                Docker.startContainer container
+                        =<< Docker.createContainer dockerService createOptions
+                Docker.startContainer dockerService container
                 TIO.putStrLn "... container started! Transitioning to `BuildRunning` state"
                 pure $
                     build
