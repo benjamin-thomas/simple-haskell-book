@@ -16,6 +16,12 @@ rg --files | entr -c cabal test --test-option --color
 ghcid -c 'cabal repl quad-test' -T :main
 ```
 
+To observe stdout, use:
+
+```sh
+cabal test --test-show-details=direct
+```
+
 ## Nicely inspect data via the REPL
 
 ```
@@ -36,6 +42,18 @@ cabal repl --repl-options "-interactive-print=Text.Pretty.Simple.pPrint" --build
     ```
 - step 3:
   - start the REPL as documented above (optional)
+
+## Give the REPL access to private functions!
+
+Prefix the module name with star.
+
+```
+-- just that one
+:m *CoreSpec
+
+-- add to the scope
+:m +*CoreSpec
+```
 
 ## Build for prod
 
