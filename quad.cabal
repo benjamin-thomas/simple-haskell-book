@@ -16,6 +16,7 @@ library
     exposed-modules:  Bootstrap
                     , Docker
                     , Core
+                    , Runner
     other-modules:    Socket
     build-depends:    text
                     , pretty-simple

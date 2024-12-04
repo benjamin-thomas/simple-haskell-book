@@ -1,27 +1,25 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- {-# LANGUAGE ScopedTypeVariables #-}
-
 module CoreSpec (spec) where
 
-import Control.Concurrent (threadDelay)
 import Control.Monad (unless)
-import Core (
-    Build (..),
-    BuildResult (BuildSuccess),
-    BuildState (BuildFinished, BuildReady),
-    Pipeline (Pipeline, pipelineSteps),
-    Step (..),
-    StepName (StepName),
-    StepResult (StepSucceeded),
-    progress,
- )
+import Core
+    ( Build (..)
+    , BuildResult (..)
+    , BuildState (..)
+    , Pipeline (..)
+    , Step (..)
+    , StepName (..)
+    , StepResult (..)
+    )
 import qualified Data.ByteString.Lazy.Char8 as C8L
 import Data.List.NonEmpty (NonEmpty ((:|)))
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Docker
+import Runner (Service (prepareBuild, runBuild))
+import qualified Runner
 import System.Process.Typed (proc, readProcess_, runProcess_)
 import Test.Hspec (Spec, afterAll_, describe, it, shouldBe)
 
@@ -29,45 +27,32 @@ makeStep :: Text -> Text -> NonEmpty Text -> Step
 makeStep name image commands =
     Step
         { stepName = StepName name
-        , stepCommands = commands
         , stepImage = Docker.Image image
+        , stepCommands = commands
         }
 
 makePipeline :: NonEmpty Step -> Pipeline
 makePipeline steps =
-    Pipeline{pipelineSteps = steps}
-
--- Test values
-testPipeline :: Pipeline
-testPipeline =
-    makePipeline $
-        makeStep "First step" "ubuntu" (NE.singleton "date")
-            :| [makeStep "Second step" "ubuntu" (NE.singleton "uname -r")]
-
-testBuild :: Build
-testBuild =
-    Build
-        { buildPipeline = testPipeline
-        , buildState = BuildReady
-        , buildCompletedSteps = mempty
+    Pipeline
+        { pipelineSteps = steps
+        , pipelineState = BuildReady
         }
 
-runBuild :: Docker.Service -> Build -> IO Build
-runBuild dockerService build = do
-    newBuild <- Core.progress dockerService build
-    case buildState newBuild of
-        BuildFinished _ -> pure newBuild
-        _ -> do
-            threadDelay $ 200 * millisec
-            runBuild dockerService newBuild
-  where
-    millisec = 1000
+testRunSuccess :: Runner.Service -> IO ()
+testRunSuccess runnerService = do
+    result <-
+        runBuild runnerService
+            . prepareBuild runnerService
+            $ makePipeline steps
 
-testRunSuccess :: Docker.Service -> IO ()
-testRunSuccess dockerService = do
-    result <- runBuild dockerService testBuild
     buildState result `shouldBe` BuildFinished BuildSuccess
     Map.elems (buildCompletedSteps result) `shouldBe` [StepSucceeded, StepSucceeded]
+  where
+    steps :: NonEmpty Step
+    steps =
+        (:|)
+            (makeStep "First step" "ubuntu" (NE.singleton "date"))
+            [makeStep "Second step" "ubuntu" (NE.singleton "uname -r")]
 
 deleteQuadContainersExn :: IO ()
 deleteQuadContainersExn = do
@@ -89,7 +74,8 @@ deleteQuadContainersExn = do
 spec :: Spec
 spec = do
     let dockerService = Docker.createService
+    let runnerService = Runner.createService dockerService
     describe "Core" $
         afterAll_ deleteQuadContainersExn $
             it "should run a successful build" $
-                testRunSuccess dockerService
+                testRunSuccess runnerService

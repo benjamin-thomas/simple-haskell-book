@@ -26,8 +26,8 @@ stepNameToText (StepName step) = step
 
 data Step = Step
     { stepName :: StepName
-    , stepCommands :: NonEmpty Text
     , stepImage :: Docker.Image
+    , stepCommands :: NonEmpty Text
     }
     deriving (Show, Eq)
 
