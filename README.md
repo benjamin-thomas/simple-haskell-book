@@ -38,7 +38,7 @@ cabal repl --repl-options "-interactive-print=Text.Pretty.Simple.pPrint" --build
   - import one of
     ```hs
     import Debug.Trace (traceIO) -- from `base`
-    import Debug.Pretty.Simple -- nicer output and emits warnings
+    import Debug.Pretty.Simple (pTraceIO) -- nicer output and emits warnings
     ```
 - step 3:
   - start the REPL as documented above (optional)

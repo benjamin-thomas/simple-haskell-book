@@ -11,7 +11,10 @@ import qualified Data.List.NonEmpty as NE
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
+import Debug.Pretty.Simple
+import Docker (CreateContainerOptions (..), Service (containerStatus))
 import qualified Docker
 
 newtype StepName = StepName Text
@@ -43,8 +46,9 @@ data BuildResult
     | BuildFailed
     deriving (Show, Eq)
 
-newtype BuildRunningState = BuildRunningState
+data BuildRunningState = BuildRunningState
     { currentStepName :: StepName
+    , containerId :: Docker.ContainerId
     }
     deriving (Show, Eq)
 
@@ -59,8 +63,8 @@ data StepResult
     | StepSucceeded
     deriving (Show, Eq)
 
-extCodeToStepResult :: Docker.ContainerExitCode -> StepResult
-extCodeToStepResult exitCode = case Docker.exitCodeToInt exitCode of
+exitCodeToStepResult :: Docker.ContainerExitCode -> StepResult
+exitCodeToStepResult exitCode = case Docker.exitCodeToInt exitCode of
     0 -> StepSucceeded
     _ -> StepFailed exitCode
 
@@ -69,6 +73,7 @@ data Build = Build
     , buildState :: BuildState
     , buildCompletedSteps :: Map StepName StepResult -- I think this data really belongs to the `BuildRunning` variant
     }
+    deriving (Show)
 
 buildHasNextStep :: Build -> Either BuildResult Step
 buildHasNextStep build =
@@ -100,41 +105,73 @@ buildHasNextStep build =
                 (buildCompletedSteps build)
 
 progress :: Docker.Service -> Build -> IO Build
-progress dockerService build = case buildState build of
-    BuildReady ->
-        case buildHasNextStep build of
-            Left result -> do
-                TIO.putStrLn "Transitioning to `BuildFinished` state"
-                pure $ build{buildState = BuildFinished result}
-            Right step -> do
-                TIO.putStrLn "Attempt starting container..."
-                let createOptions = Docker.CreateContainerOptions $ Docker.Image "alpine"
-                container <-
-                    either
-                        -- TODO: decide how to handle errors
-                        (\_ -> throwIO $ userError "Failed to create container")
-                        pure
-                        =<< Docker.createContainer dockerService createOptions
-                Docker.startContainer dockerService container
-                TIO.putStrLn "... container started! Transitioning to `BuildRunning` state"
-                pure $
-                    build
-                        { buildState =
-                            BuildRunning $
-                                BuildRunningState{currentStepName = stepName step}
-                        }
-    BuildRunning state -> do
-        TIO.putStrLn "Waiting for container to stop..."
-        let result = extCodeToStepResult $ Docker.ContainerExitCode 0
-        TIO.putStrLn "... container stopped! Exit code was: 0. Transitioning to `BuildFinished` state"
-        pure
-            build
-                { buildState = BuildReady
-                , buildCompletedSteps =
-                    Map.insert
-                        (currentStepName state)
-                        result
-                        (buildCompletedSteps build)
-                }
-    BuildFinished _ ->
-        pure build
+progress dockerService build = do
+    pTraceIO $ show build
+    case buildState build of
+        BuildReady ->
+            case buildHasNextStep build of
+                Left result -> do
+                    TIO.putStrLn "Transitioning to `BuildFinished` state"
+                    pure $
+                        build
+                            { buildState = BuildFinished result
+                            }
+                Right step -> do
+                    TIO.putStrLn "Attempt starting container..."
+                    let script' = T.unlines $ "set -ex" : NE.toList (stepCommands step)
+                    let image' = stepImage step
+                    let createOptions =
+                            Docker.CreateContainerOptions
+                                { image = image'
+                                , script = script'
+                                }
+                    containerId' <-
+                        either
+                            -- TODO: decide how to handle errors
+                            ( \err -> do
+                                TIO.putStrLn $ "/!\\ Failed to create container: " <> T.pack (show err)
+                                throwIO $ userError "Failed to create container: "
+                            )
+                            pure
+                            =<< Docker.createContainer dockerService createOptions
+                    Docker.startContainer dockerService containerId'
+                    TIO.putStrLn "... container started! Transitioning to `BuildRunning` state"
+                    pure $
+                        build
+                            { buildState =
+                                BuildRunning $
+                                    BuildRunningState
+                                        { currentStepName = stepName step
+                                        , containerId = containerId'
+                                        }
+                            }
+        BuildRunning state -> do
+            TIO.putStrLn "Container is running, checking status for failure..."
+            status <- containerStatus dockerService (containerId state)
+            case status of
+                Right Docker.ContainerRunning -> do
+                    TIO.putStrLn "Container is still running, NOOP"
+                    pure build
+                Right (Docker.ContainerExited exitCode) -> do
+                    let stepResult = exitCodeToStepResult exitCode
+                    pure
+                        build
+                            { buildState =
+                                case stepResult of
+                                    StepFailed _ -> BuildFinished BuildFailed
+                                    StepSucceeded -> BuildFinished BuildSuccess
+                            , buildCompletedSteps =
+                                Map.insert
+                                    (currentStepName state)
+                                    stepResult
+                                    (buildCompletedSteps build)
+                            }
+                Right (Docker.ContainerUnknownStatus status') -> do
+                    TIO.putStrLn $ "Unexpected container status: " <> status'
+                    pure $
+                        build{buildState = BuildFinished BuildFailed}
+                Left err -> do
+                    TIO.putStrLn $ "Unexpected error: " <> T.pack (show err)
+                    pure $ build{buildState = BuildFinished BuildFailed}
+        BuildFinished _ -> do
+            pure build

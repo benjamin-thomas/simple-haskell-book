@@ -21,7 +21,7 @@ import qualified Docker
 import Runner (Service (prepareBuild, runBuild))
 import qualified Runner
 import System.Process.Typed (proc, readProcess_, runProcess_)
-import Test.Hspec (Spec, afterAll_, describe, it, shouldBe)
+import Test.Hspec (Spec, afterAll_, describe, hspec, it, runIO, shouldBe)
 
 makeStep :: Text -> Text -> NonEmpty Text -> Step
 makeStep name image commands =
@@ -54,6 +54,19 @@ testRunSuccess runnerService = do
             (makeStep "First step" "ubuntu" (NE.singleton "date"))
             [makeStep "Second step" "ubuntu" (NE.singleton "uname -r")]
 
+testRunFailure :: Runner.Service -> IO ()
+testRunFailure runnerService = do
+    result <-
+        runBuild runnerService
+            . prepareBuild runnerService
+            . makePipeline
+            $ NE.singleton (makeStep "Should fail" "ubuntu" (NE.singleton "exit 1"))
+
+    buildState result `shouldBe` BuildFinished BuildFailed
+    shouldBe
+        (Map.elems (buildCompletedSteps result))
+        [StepFailed (Docker.ContainerExitCode 1)]
+
 deleteQuadContainersExn :: IO ()
 deleteQuadContainersExn = do
     -- FIXME: I tried and failed to stream in an xargs fashion. Give it another go later.
@@ -71,11 +84,18 @@ deleteQuadContainersExn = do
         print containerIds
         runProcess_ $ proc "docker" ("rm" : "-f" : containerIds)
 
-spec :: Spec
-spec = do
-    let dockerService = Docker.createService
+spec :: IO ()
+spec = hspec $ do
+    dockerService <- runIO Docker.createService
     let runnerService = Runner.createService dockerService
+    runSpec runnerService
+
+runSpec :: Runner.Service -> Spec
+runSpec runnerService = do
+    let test = it
     describe "Core" $
-        afterAll_ deleteQuadContainersExn $
-            it "should run a successful build" $
+        afterAll_ deleteQuadContainersExn $ do
+            test "a successful build" $
                 testRunSuccess runnerService
+            test "a failed build" $
+                testRunFailure runnerService
