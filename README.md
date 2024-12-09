@@ -43,6 +43,22 @@ cabal repl --repl-options "-interactive-print=Text.Pretty.Simple.pPrint" --build
 - step 3:
   - start the REPL as documented above (optional)
 
+## Debug/print + clearing the screen per print invocation
+
+Clearing the screen per print invocation
+```
+:def! dbg \expr -> return $ ":!clear\n" ++ "print (" ++ expr ++ ")"
+
+:set -Wno-deprecations
+:def! dbg \expr -> return $ ":!clear\n" ++ "pTraceIO (show (" ++ expr ++ "))"
+```
+
+The call:
+
+```
+ghci> :dbg wip1
+```
+
 ## Give the REPL access to private functions!
 
 Prefix the module name with star.
@@ -57,7 +73,7 @@ Prefix the module name with star.
 
 ## Build for prod
 
-This plays nicely with the `pretty-simple` which emits warnings when using tracing functions. 
+This plays nicely with the `pretty-simple` which emits warnings when using tracing functions.
 
 ```sh
 cabal build --ghc-options="-Werror"

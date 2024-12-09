@@ -30,6 +30,7 @@ library
 
                     , aeson
                     , twain
+                    , typed-process
 
 
 executable quad

@@ -25,33 +25,31 @@ import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import qualified Data.Text.IO as TIO
 import Network.HTTP.Client (Manager)
 
-newtype Image = Image Text
-    deriving (Show, Eq)
-
-imageToText :: Image -> Text
-imageToText (Image image_) = image_
-
 data CreateContainerOptions = CreateContainerOptions
-    { image :: Image
+    { image :: Text
     , script :: Text
     }
 
-newtype ContainerExitCode = ContainerExitCode Int
-    deriving (Show, Eq)
+-- newtype ContainerExitCode = ContainerExitCode Int
+--     deriving (Show, Eq)
 
-exitCodeToInt :: ContainerExitCode -> Int
-exitCodeToInt (ContainerExitCode exitCode) = exitCode
+-- exitCodeToInt :: ContainerExitCode -> Int
+-- exitCodeToInt (ContainerExitCode exitCode) = exitCode
 
 newtype ContainerId = ContainerId Text
-    deriving (Show, Eq)
+    deriving (Show)
 
-containerIdToText :: ContainerId -> Text
-containerIdToText = coerce
+-- containerIdToText :: ContainerId -> Text
+-- containerIdToText = coerce
+
+data ContainerStatus
+    = ContainerRunning
+    | ContainerExited Int
 
 data Service = Service
     { createContainer :: CreateContainerOptions -> IO (Either CreateContainerError ContainerId)
     , startContainer :: ContainerId -> IO ()
-    , containerStatus :: ContainerId -> IO (Either ContainerStatusResponseError ContainerStatus)
+    , getContainerStatus :: ContainerId -> IO (Either ContainerStatusResponseError ContainerStatus)
     }
 
 createService :: IO Service
@@ -67,7 +65,7 @@ createService = do
         Service
             { createContainer = createContainer_ mkRequest
             , startContainer = startContainer_ mkRequest
-            , containerStatus = containerStatus_ mkRequest
+            , getContainerStatus = getContainerStatus_ mkRequest
             }
 
 newtype DockerParseException = DockerParseException Text
@@ -83,10 +81,10 @@ instance FromJSON ContainerId where
     parseJSON (Object obj) = ContainerId <$> (obj .: "Id")
     parseJSON _ = fail "not an object"
 
-data ContainerStatus
-    = ContainerRunning
-    | ContainerExited ContainerExitCode
-    | ContainerUnknownStatus Text
+-- data ContainerStatus
+--     = ContainerRunning
+--     | ContainerExited ContainerExitCode
+--     | ContainerUnknownStatus Text
 
 initManager :: IO Manager
 initManager = Socket.newManager "/var/run/docker.sock"
@@ -139,12 +137,11 @@ createContainer_ mkRequest options = do
     let body :: Aeson.Value
         body =
             Aeson.object
-                [ ("Image", Aeson.String $ imageToText $ image options)
+                [ ("Image", Aeson.String $ image options)
                 , ("Tty", Aeson.Bool True)
                 , ("Labels", Aeson.object [("quad", "")])
                 , ("Entrypoint", Aeson.toJSON entrypoint)
-                , -- , ("Cmd", "echo hello")
-                  ("Env", Aeson.toJSON ["QUAD_SCRIPT=" <> script'])
+                , ("Env", Aeson.toJSON ["QUAD_SCRIPT=" <> script'])
                 , ("Cmd", "echo \"$QUAD_SCRIPT\" | /bin/sh")
                 ]
           where
@@ -215,8 +212,8 @@ curl -s --unix-socket /var/run/docker.sock http://localhost/containers/a9998fab3
 }
 
  -}
-containerStatus_ :: (ByteString -> Request) -> ContainerId -> IO (Either ContainerStatusResponseError ContainerStatus)
-containerStatus_ mkRequest containerId = do
+getContainerStatus_ :: (ByteString -> Request) -> ContainerId -> IO (Either ContainerStatusResponseError ContainerStatus)
+getContainerStatus_ mkRequest containerId = do
     let
         parser :: Value -> Aeson.Parser ContainerStatus
         parser = Aeson.withObject "container-inspect" $ \o -> do
@@ -226,9 +223,9 @@ containerStatus_ mkRequest containerId = do
                 "running" -> pure ContainerRunning
                 "exited" -> do
                     exitCode <- state .: "ExitCode"
-                    pure $ ContainerExited (ContainerExitCode exitCode)
-                _ -> pure $ ContainerUnknownStatus status
-    let req = mkRequest $ "/containers/" <> encodeUtf8 (containerIdToText containerId) <> "/json"
+                    pure $ ContainerExited exitCode
+                _ -> fail $ "Unknown status: " <> status
+    let req = mkRequest $ "/containers/" <> encodeUtf8 (coerce containerId) <> "/json"
     res <- HTTP.httpBS req
     let
         parseResponse :: ByteString -> Either String ContainerStatus
